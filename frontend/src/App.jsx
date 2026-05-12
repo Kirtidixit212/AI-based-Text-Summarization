@@ -20,7 +20,7 @@ function App() {
       setSummary("");
       setSummaryType("");
 
-      const response = await fetch("http://127.0.0.1:8000/summarize", {
+      const response = await fetch("https://ai-based-text-summarization-gy2h.onrender.com", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -61,7 +61,7 @@ function App() {
       const formData = new FormData();
       formData.append("file", pdfFile);
 
-      const response = await fetch("http://127.0.0.1:8000/summarize-pdf", {
+      const response = await fetch("https://ai-based-text-summarization-gy2h.onrender.com-pdf", {
         method: "POST",
         body: formData
       });
