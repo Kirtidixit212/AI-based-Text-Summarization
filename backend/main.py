@@ -19,8 +19,18 @@ app.add_middleware(
 
 # Load AI model
 model_name = "t5-small"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+tokenizer = None
+model = None
+
+
+def load_model():
+    global tokenizer, model
+
+    if tokenizer is None or model is None:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+    return tokenizer, model
 
 
 class InputText(BaseModel):
@@ -34,6 +44,8 @@ def clean_text(text):
 
 
 def summarize_text(text):
+    tokenizer, model = load_model()
+    
     text = clean_text(text)
 
     if len(text.split()) < 30:
