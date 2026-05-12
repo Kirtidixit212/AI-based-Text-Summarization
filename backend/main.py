@@ -1,36 +1,25 @@
 from fastapi import FastAPI, UploadFile, File
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
 import fitz  # PyMuPDF
 import pdfplumber
 import tempfile
 import os
+import requests
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Later replace with your Vercel frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load AI model
-model_name = "t5-small"
-tokenizer = None
-model = None
-
-
-def load_model():
-    global tokenizer, model
-
-    if tokenizer is None or model is None:
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-
-    return tokenizer, model
+# HuggingFace Inference API model
+HF_API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
 
 
 class InputText(BaseModel):
@@ -44,48 +33,53 @@ def clean_text(text):
 
 
 def summarize_text(text):
-    tokenizer, model = load_model()
-    
     text = clean_text(text)
 
     if len(text.split()) < 30:
         return "Please provide at least 30 words for summarization."
 
-    # Split long text into chunks because T5-small has input limits
-    words = text.split()
-    chunks = []
+    hf_token = os.getenv("HF_TOKEN")
 
-    chunk_size = 350
-    for i in range(0, len(words), chunk_size):
-        chunk = " ".join(words[i:i + chunk_size])
-        chunks.append(chunk)
+    headers = {}
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token}"
 
-    summaries = []
+    # Limit text size for API request
+    text = text[:3000]
 
-    for chunk in chunks[:5]:  # limit to first 5 chunks for speed
-        input_text = "summarize: " + chunk
+    payload = {
+        "inputs": text,
+        "parameters": {
+            "max_length": 120,
+            "min_length": 30,
+            "do_sample": False
+        }
+    }
 
-        inputs = tokenizer(
-            input_text,
-            return_tensors="pt",
-            max_length=512,
-            truncation=True
+    try:
+        response = requests.post(
+            HF_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=60
         )
 
-        output = model.generate(
-            inputs["input_ids"],
-            max_length=120,
-            min_length=30,
-            num_beams=4,
-            early_stopping=True
-        )
+        if response.status_code != 200:
+            return f"AI API error: {response.text}"
 
-        summary = tokenizer.decode(output[0], skip_special_tokens=True)
-        summaries.append(summary)
+        result = response.json()
 
-    final_summary = " ".join(summaries)
+        if isinstance(result, list) and len(result) > 0:
+            if "summary_text" in result[0]:
+                return result[0]["summary_text"]
 
-    return final_summary
+        return str(result)
+
+    except requests.exceptions.Timeout:
+        return "AI API request timed out. Please try again."
+
+    except Exception as e:
+        return f"AI API error: {str(e)}"
 
 
 def extract_text_with_pymupdf(pdf_path):
@@ -144,21 +138,18 @@ def summarize(data: InputText):
 
 @app.post("/summarize-pdf")
 async def summarize_pdf(file: UploadFile = File(...)):
-    if not file.filename.endswith(".pdf"):
+    if not file.filename.lower().endswith(".pdf"):
         return {"error": "Only PDF files are allowed"}
 
     temp_file_path = ""
 
     try:
-        # Save uploaded PDF temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
             temp_file.write(await file.read())
             temp_file_path = temp_file.name
 
-        # First try PyMuPDF
         extracted_text = extract_text_with_pymupdf(temp_file_path)
 
-        # If PyMuPDF gives weak/no text, try pdfplumber
         if len(extracted_text.split()) < 30:
             extracted_text = extract_text_with_pdfplumber(temp_file_path)
 
