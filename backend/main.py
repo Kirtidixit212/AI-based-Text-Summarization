@@ -18,8 +18,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# HuggingFace Inference API model
-HF_API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
+# Lighter summarization model for deployment
+HF_API_URL = "https://api-inference.huggingface.co/models/sshleifer/distilbart-cnn-12-6"
 
 
 class InputText(BaseModel):
@@ -40,19 +40,26 @@ def summarize_text(text):
 
     hf_token = os.getenv("HF_TOKEN")
 
-    headers = {}
-    if hf_token:
-        headers["Authorization"] = f"Bearer {hf_token}"
+    if not hf_token:
+        return "HF_TOKEN is missing on server. Please add it in Render environment variables."
 
-    # Limit text size for API request
-    text = text[:3000]
+    headers = {
+        "Authorization": f"Bearer {hf_token}",
+        "Content-Type": "application/json"
+    }
+
+    # Keep input small for faster API response
+    text = text[:2000]
 
     payload = {
         "inputs": text,
         "parameters": {
-            "max_length": 120,
-            "min_length": 30,
+            "max_length": 100,
+            "min_length": 25,
             "do_sample": False
+        },
+        "options": {
+            "wait_for_model": True
         }
     }
 
@@ -61,22 +68,24 @@ def summarize_text(text):
             HF_API_URL,
             headers=headers,
             json=payload,
-            timeout=60
+            timeout=90
         )
 
+        try:
+            result = response.json()
+        except Exception:
+            return f"AI API returned non-JSON response: {response.text}"
+
         if response.status_code != 200:
-            return f"AI API error: {response.text}"
+            return f"AI API error: {result}"
 
-        result = response.json()
+        if isinstance(result, list) and len(result) > 0 and "summary_text" in result[0]:
+            return result[0]["summary_text"]
 
-        if isinstance(result, list) and len(result) > 0:
-            if "summary_text" in result[0]:
-                return result[0]["summary_text"]
-
-        return str(result)
+        return f"Unexpected AI response: {result}"
 
     except requests.exceptions.Timeout:
-        return "AI API request timed out. Please try again."
+        return "AI API request timed out. Please try again after a few seconds."
 
     except Exception as e:
         return f"AI API error: {str(e)}"
