@@ -9,6 +9,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [summaryType, setSummaryType] = useState("");
 
+  const API_BASE_URL = "https://ai-based-text-summarization-gy2h.onrender.com";
+
   const handleTextSummarize = async () => {
     if (inputText.trim() === "") {
       alert("Please enter some text first.");
@@ -20,7 +22,7 @@ function App() {
       setSummary("");
       setSummaryType("");
 
-      const response = await fetch("https://ai-based-text-summarization-gy2h.onrender.com", {
+      const response = await fetch(`${API_BASE_URL}/summarize`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -32,6 +34,11 @@ function App() {
 
       const data = await response.json();
 
+      if (!response.ok) {
+        alert("Backend error: " + JSON.stringify(data));
+        return;
+      }
+
       if (data.error) {
         alert(data.error);
         return;
@@ -40,8 +47,8 @@ function App() {
       setSummary(data.summary);
       setSummaryType("Text Summary");
     } catch (error) {
-      console.error(error);
-      alert("Backend connection failed. Make sure FastAPI is running.");
+      console.error("Text Error:", error);
+      alert("Text summarization failed. Please check if backend is active.");
     } finally {
       setLoading(false);
     }
@@ -61,12 +68,17 @@ function App() {
       const formData = new FormData();
       formData.append("file", pdfFile);
 
-      const response = await fetch("https://ai-based-text-summarization-gy2h.onrender.com-pdf", {
+      const response = await fetch(`${API_BASE_URL}/summarize-pdf`, {
         method: "POST",
         body: formData
       });
 
       const data = await response.json();
+
+      if (!response.ok) {
+        alert("Backend error: " + JSON.stringify(data));
+        return;
+      }
 
       if (data.error) {
         alert(data.error);
@@ -76,8 +88,8 @@ function App() {
       setSummary(data.summary);
       setSummaryType(`PDF Summary: ${data.filename}`);
     } catch (error) {
-      console.error(error);
-      alert("PDF summarization failed. Make sure FastAPI is running.");
+      console.error("PDF Error:", error);
+      alert("PDF summarization failed. Please check if backend is active.");
     } finally {
       setLoading(false);
     }
